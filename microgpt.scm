@@ -170,3 +170,43 @@
           (value-children v)
           (value-local-grads v)))
       topo)))
+
+;;; --- Section 6: Model parameters ---
+
+(define n-layer 1)
+(define n-embd 16)
+(define block-size 16)
+(define n-head 4)
+(define head-dim (/ n-embd n-head))
+
+;; Weight matrix: vector of nout rows, each row a list of nin random Values
+(define (matrix nout nin)
+  (let ((rows (make-vector nout '())))
+    (do ((i 0 (+ i 1))) ((= i nout) rows)
+      (vector-set! rows i
+        (map (lambda (_) (val (gauss 0 0.08))) (iota nin))))))
+
+;; State dict: string-keyed hash table of weight matrices
+(define state-dict
+  (let ((sd (make-hash-table string=? string-hash)))
+    (hash-table-set! sd "wte" (matrix vocab-size n-embd))
+    (hash-table-set! sd "wpe" (matrix block-size n-embd))
+    (hash-table-set! sd "lm_head" (matrix vocab-size n-embd))
+    (do ((i 0 (+ i 1))) ((= i n-layer) sd)
+      (let ((prefix (string-append "layer" (number->string i) ".")))
+        (hash-table-set! sd (string-append prefix "attn_wq") (matrix n-embd n-embd))
+        (hash-table-set! sd (string-append prefix "attn_wk") (matrix n-embd n-embd))
+        (hash-table-set! sd (string-append prefix "attn_wv") (matrix n-embd n-embd))
+        (hash-table-set! sd (string-append prefix "attn_wo") (matrix n-embd n-embd))
+        (hash-table-set! sd (string-append prefix "mlp_fc1") (matrix (* 4 n-embd) n-embd))
+        (hash-table-set! sd (string-append prefix "mlp_fc2") (matrix n-embd (* 4 n-embd)))))))
+
+;; Flatten all parameters into a single list of Value nodes
+(define params
+  (append-map
+    (lambda (key)
+      (let ((mat (hash-table-ref state-dict key)))
+        (apply append (vector->list mat))))
+    (hash-table-keys state-dict)))
+
+(display "num params: ") (display (length params)) (newline)
