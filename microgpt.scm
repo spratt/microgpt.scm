@@ -143,7 +143,7 @@
 ;; Derived operations
 (define (vneg v) (v* v -1))
 (define (v- a b) (v+ a (vneg b)))
-(define (v/ a b) (v* a (v** b -1)))
+(define (v/ a b) (v* a (v** (ensure-value b) -1)))
 
 ;; Sum a list of Values
 (define (vsum lst) (fold v+ (val 0) lst))
@@ -291,3 +291,71 @@
                    (x (linear x (hash-table-ref state-dict (string-append prefix "mlp_fc2"))))
                    (x (map v+ x x-residual)))
               (layer-loop (+ li 1) x)))))))
+
+;;; --- Section 8: Adam optimizer + training loop ---
+
+;; Adam hyperparameters
+(define learning-rate 0.01)
+(define beta1 0.85)
+(define beta2 0.99)
+(define eps-adam 1e-8)
+
+;; Adam moment buffers (vectors for O(1) indexed access)
+(define num-params (length params))
+(define params-vec (list->vector params))
+(define adam-m (make-vector num-params 0.0))
+(define adam-v (make-vector num-params 0.0))
+
+;; Tokenize a document: BOS + char ids + BOS (returns a vector)
+(define (tokenize doc)
+  (list->vector
+    (append (list BOS)
+            (map (lambda (ch) (hash-table-ref char->id ch))
+                 (string->list doc))
+            (list BOS))))
+
+;; Training loop
+(define num-steps 1000)
+
+(do ((step 0 (+ step 1))) ((= step num-steps))
+  ;; Pick document and tokenize
+  (let* ((doc (vector-ref docs (modulo step (vector-length docs))))
+         (tokens (tokenize doc))
+         (n (min block-size (- (vector-length tokens) 1)))
+         ;; Fresh KV cache per document
+         (keys (make-vector n-layer '()))
+         (vals (make-vector n-layer '())))
+    ;; Forward pass: compute per-position losses
+    (let pos-loop ((pos-id 0) (losses '()))
+      (if (= pos-id n)
+          (let* ((loss (v* (vsum (reverse losses)) (/ 1.0 n))))
+            ;; Backward pass
+            (backward loss)
+            ;; Adam optimizer update
+            (let ((lr-t (* learning-rate (- 1 (/ step num-steps)))))
+              (do ((i 0 (+ i 1))) ((= i num-params))
+                (let* ((p (vector-ref params-vec i))
+                       (g (value-grad p))
+                       (mi (+ (* beta1 (vector-ref adam-m i))
+                              (* (- 1 beta1) g)))
+                       (vi (+ (* beta2 (vector-ref adam-v i))
+                              (* (- 1 beta2) (* g g))))
+                       (m-hat (/ mi (- 1 (expt beta1 (+ step 1)))))
+                       (v-hat (/ vi (- 1 (expt beta2 (+ step 1))))))
+                  (vector-set! adam-m i mi)
+                  (vector-set! adam-v i vi)
+                  (set-value-data! p
+                    (- (value-data p) (* lr-t (/ m-hat (+ (sqrt v-hat) eps-adam)))))
+                  (set-value-grad! p 0))))
+            ;; Print progress
+            (display "step ") (display (+ step 1))
+            (display " / ") (display num-steps)
+            (display " | loss ") (display (value-data loss))
+            (newline))
+          ;; Process one position
+          (let* ((token-id (vector-ref tokens pos-id))
+                 (target-id (vector-ref tokens (+ pos-id 1)))
+                 (logits (gpt token-id pos-id keys vals))
+                 (probs (softmax logits))
+                 (loss-t (vneg (vlog (list-ref probs target-id)))))
+            (pos-loop (+ pos-id 1) (cons loss-t losses)))))))
