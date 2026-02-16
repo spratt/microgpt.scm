@@ -45,3 +45,28 @@
             (if (>= acc threshold)
                 i
                 (loop (cdr ws) acc (+ i 1))))))))
+
+;;; --- Section 3: Dataset loading ---
+
+;; string-trim: strip leading and trailing whitespace (replaces SRFI-13)
+(define (string-trim s)
+  (let* ((chars (string->list s))
+         (trimmed (drop-while char-whitespace? chars))
+         (trimmed (reverse (drop-while char-whitespace? (reverse trimmed)))))
+    (list->string trimmed)))
+
+;; Read all non-empty lines from a file, trimming whitespace
+(define (read-lines filename)
+  (call-with-input-file filename
+    (lambda (port)
+      (let loop ((lines '()))
+        (let ((line (read-line port)))
+          (if (eof-object? line)
+              (reverse lines)
+              (let ((trimmed (string-trim line)))
+                (if (string=? trimmed "")
+                    (loop lines)
+                    (loop (cons trimmed lines))))))))))
+
+(define docs (shuffle (read-lines "input.txt")))
+(display "num docs: ") (display (length docs)) (newline)
