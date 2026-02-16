@@ -90,3 +90,83 @@
 (define BOS (vector-length uchars))
 (define vocab-size (+ (vector-length uchars) 1))
 (display "vocab size: ") (display vocab-size) (newline)
+
+;;; --- Section 5: Value record type + autograd operations + backward ---
+
+;; Autograd node: a scalar value in a computation graph
+(define-record-type <value>
+  (make-value data grad children local-grads)
+  value?
+  (data value-data set-value-data!)
+  (grad value-grad set-value-grad!)
+  (children value-children)
+  (local-grads value-local-grads))
+
+;; Wrap a plain number as a leaf Value node
+(define (val x) (make-value x 0 '() '()))
+
+;; Auto-wrap plain numbers so v+ and v* can accept mixed arguments
+(define (ensure-value x) (if (value? x) x (val x)))
+
+;; Addition: d(a+b)/da = 1, d(a+b)/db = 1
+(define (v+ a b)
+  (let ((a (ensure-value a)) (b (ensure-value b)))
+    (make-value (+ (value-data a) (value-data b)) 0
+                (list a b) (list 1 1))))
+
+;; Multiplication: d(a*b)/da = b, d(a*b)/db = a
+(define (v* a b)
+  (let ((a (ensure-value a)) (b (ensure-value b)))
+    (make-value (* (value-data a) (value-data b)) 0
+                (list a b) (list (value-data b) (value-data a)))))
+
+;; Power: d(x^n)/dx = n * x^(n-1). Exponent n is a plain number.
+(define (v** v n)
+  (make-value (expt (value-data v) n) 0
+              (list v) (list (* n (expt (value-data v) (- n 1))))))
+
+;; Log: d(log x)/dx = 1/x
+(define (vlog v)
+  (make-value (log (value-data v)) 0
+              (list v) (list (/ 1 (value-data v)))))
+
+;; Exp: d(exp x)/dx = exp(x)
+(define (vexp v)
+  (make-value (exp (value-data v)) 0
+              (list v) (list (exp (value-data v)))))
+
+;; ReLU: d(relu x)/dx = 1 if x > 0, else 0
+(define (vrelu v)
+  (make-value (max 0 (value-data v)) 0
+              (list v) (list (if (> (value-data v) 0) 1.0 0.0))))
+
+;; Derived operations
+(define (vneg v) (v* v -1))
+(define (v- a b) (v+ a (vneg b)))
+(define (v/ a b) (v* a (v** b -1)))
+
+;; Sum a list of Values
+(define (vsum lst) (fold v+ (val 0) lst))
+
+;; Backward pass: topological sort + gradient propagation
+(define (backward loss)
+  ;; Build topological order via DFS (cons prepends, so topo ends up
+  ;; with loss at the head and leaves at the tail — the order we need)
+  (let ((topo '())
+        (visited (make-hash-table eq?)))
+    (let build-topo ((v loss))
+      (when (not (hash-table-exists? visited v))
+        (hash-table-set! visited v #t)
+        (for-each build-topo (value-children v))
+        (set! topo (cons v topo))))
+    ;; Propagate gradients from loss back to all parameters
+    (set-value-grad! loss 1)
+    (for-each
+      (lambda (v)
+        (for-each
+          (lambda (child local-grad)
+            (set-value-grad! child
+              (+ (value-grad child) (* local-grad (value-grad v)))))
+          (value-children v)
+          (value-local-grads v)))
+      topo)))
