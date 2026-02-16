@@ -13,13 +13,13 @@ Uses `call-with-input-file` and `read-line` (both R7RS-small) to read all lines 
 ## Top-level
 
 ```scheme
-(define docs (shuffle (read-lines "input.txt")))
+(define docs (list->vector (shuffle (read-lines "input.txt"))))
 ```
 
-Reads and shuffles in one expression. The Python downloads `input.txt` if missing; we skip that since R7RS-small has no HTTP client. The file must be present.
+Reads, shuffles, and converts to a vector in one expression. The Python downloads `input.txt` if missing; we skip that since R7RS-small has no HTTP client. The file must be present.
 
 ## Decisions
 
 - **No auto-download**. Python's `urllib.request.urlretrieve` has no R7RS equivalent. The file is already in the repo.
 - **`string-trim` uses `drop-while`** from SRFI-1, which we already import. This avoids index arithmetic and is idiomatic Scheme.
-- **`read-lines` returns a list**, matching how `docs` is used throughout (indexed by `step % len(docs)` via `list-ref`). In phase 2 with a larger dataset, this could become a vector for O(1) access.
+- **`docs` is a vector**, not a list. `read-lines` returns a list, which `shuffle` randomizes, then `list->vector` converts to a vector for O(1) indexed access. The training loop will use `vector-ref` by `step % (vector-length docs)`. With 32K documents, `list-ref` would be O(n) per step — a significant regression from Python's array-backed lists. The tokenizer's `uchars` computation converts back to a list with `vector->list` for `append-map`, but this runs once at startup.

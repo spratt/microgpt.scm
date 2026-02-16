@@ -27,4 +27,4 @@ Replaces Python's `random.choices(range(vocab_size), weights=...)`. Used during 
 ## Decisions
 
 - **`shuffle` operates on lists** via list-to-vector-to-list conversion. Fisher-Yates requires O(1) indexed access for swaps, which vectors provide. The input dataset (`docs`) is a list, so we convert at the boundary.
-- **`weighted-choice` computes `total` but doesn't use it** — the threshold is computed from a second `fold`. This is a minor inefficiency (two passes instead of one) but keeps the code clear. The weight list is only 27 elements (vocab_size), so it's negligible.
+- **`weighted-choice` uses `let*` to compute `total` once and reuse it** for the threshold calculation. An earlier version computed `(fold + 0 weights)` twice (once for `total`, once inline in `threshold`). Fixed to a single pass since phase 2 will have 600+ tokens.

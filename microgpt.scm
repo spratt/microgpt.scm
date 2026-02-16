@@ -36,8 +36,8 @@
 ;; Walks the weights accumulating a running sum, returns the index
 ;; where the cumulative sum exceeds a uniform random threshold.
 (define (weighted-choice weights)
-  (let ((total (fold + 0 weights))
-        (threshold (* (random-real) (fold + 0 weights))))
+  (let* ((total (fold + 0 weights))
+         (threshold (* (random-real) total)))
     (let loop ((ws weights) (acc 0) (i 0))
       (if (null? (cdr ws))
           i
@@ -68,8 +68,8 @@
                     (loop lines)
                     (loop (cons trimmed lines))))))))))
 
-(define docs (shuffle (read-lines "input.txt")))
-(display "num docs: ") (display (length docs)) (newline)
+(define docs (list->vector (shuffle (read-lines "input.txt"))))
+(display "num docs: ") (display (vector-length docs)) (newline)
 
 ;;; --- Section 4: Tokenizer ---
 
@@ -78,7 +78,7 @@
   (list->vector
     (list-sort char<?
       (delete-duplicates
-        (append-map string->list docs)
+        (append-map string->list (vector->list docs))
         char=?))))
 
 ;; Reverse lookup: char → token id (O(1) via hash table)
