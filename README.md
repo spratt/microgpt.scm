@@ -46,3 +46,15 @@ sudo chicken-install srfi-1 srfi-27 srfi-69 srfi-132 r7rs
 ```
 csc -R r7rs microgpt.scm -o microgpt && ./microgpt
 ```
+
+## Benchmark
+
+| Implementation | User time | Wall time | vs Python |
+|---|---|---|---|
+| SBCL (Common Lisp) | 12s | 15s | 0.14x |
+| Python 3 | 90s | 1m31s | 1.0x |
+| Clojure (JVM) | 129s | 1m55s | 1.4x |
+| **CHICKEN (compiled Scheme)** | **170s** | **2m54s** | **1.9x** |
+| **Chibi Scheme (interpreted)** | **319s** | **5m21s** | **3.5x** |
+
+CHICKEN compiles Scheme to C, roughly twice as fast as Chibi's interpreter. Both are slower than CPython due to additional allocation overhead — every autograd operation creates new cons cells and lists.
