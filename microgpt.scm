@@ -359,3 +359,37 @@
                  (probs (softmax logits))
                  (loss-t (vneg (vlog (list-ref probs target-id)))))
             (pos-loop (+ pos-id 1) (cons loss-t losses)))))))
+
+;;; --- Section 9: Inference + sampling ---
+
+(define temperature 0.5)
+
+(newline)
+(display "--- inference (new, hallucinated names) ---")
+(newline)
+
+(do ((sample-idx 0 (+ sample-idx 1))) ((= sample-idx 20))
+  (let ((keys (make-vector n-layer '()))
+        (vals (make-vector n-layer '())))
+    (let sample-loop ((pos-id 0) (token-id BOS) (chars '()))
+      (if (= pos-id block-size)
+          ;; Reached max length, print what we have
+          (begin
+            (display "sample ") (display (+ sample-idx 1))
+            (display ": ") (display (list->string (reverse chars)))
+            (newline))
+          ;; Generate next token
+          (let* ((logits (gpt token-id pos-id keys vals))
+                 (scaled (map (lambda (l) (v/ l temperature)) logits))
+                 (probs (softmax scaled))
+                 (weights (map value-data probs))
+                 (next-id (weighted-choice weights)))
+            (if (= next-id BOS)
+                ;; BOS means end of name, print result
+                (begin
+                  (display "sample ") (display (+ sample-idx 1))
+                  (display ": ") (display (list->string (reverse chars)))
+                  (newline))
+                ;; Append character and continue
+                (sample-loop (+ pos-id 1) next-id
+                             (cons (vector-ref uchars next-id) chars))))))))
