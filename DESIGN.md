@@ -81,6 +81,10 @@ The optimizer's first-moment (`adam-m`) and second-moment (`adam-v`) buffers are
 
 SRFI-13 is not available in Chibi Scheme. `string-trim` is implemented using `drop-while` from SRFI-1 on both ends of the character list.
 
+### 12. No auto-download of input.txt
+
+Python's microgpt.py downloads `input.txt` from GitHub if not present. This is omitted because neither R7RS-small nor the SRFIs we use provide HTTP networking. Implementation-specific extensions exist (Chibi's `(chibi net http)`, CHICKEN's `http-client` egg) but would require `cond-expand` branching for a one-time convenience. The user is expected to download `input.txt` manually.
+
 ### 11. Default hash functions
 
 SRFI-69 hash function signatures differ between implementations (Chibi expects two arguments, CHICKEN expects one). Using `(make-hash-table)` with defaults avoids this incompatibility. For `state-dict`, we explicitly pass `string=?` and `string-hash` since string keys are known.

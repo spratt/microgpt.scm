@@ -32,6 +32,8 @@
 ;;; to convert characters to numbers and back.
 ;;; ========================================================================
 
+(random-source-pseudo-randomize! default-random-source 0 42)
+
 ;;; --- PRNG helpers ---
 ;;; SRFI-27 provides uniform random numbers. On top of these we build the
 ;;; three random operations microgpt needs.
