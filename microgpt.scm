@@ -70,3 +70,23 @@
 
 (define docs (shuffle (read-lines "input.txt")))
 (display "num docs: ") (display (length docs)) (newline)
+
+;;; --- Section 4: Tokenizer ---
+
+;; Unique sorted characters from all docs (vector for O(1) decoding)
+(define uchars
+  (list->vector
+    (list-sort char<?
+      (delete-duplicates
+        (append-map string->list docs)
+        char=?))))
+
+;; Reverse lookup: char → token id (O(1) via hash table)
+(define char->id
+  (let ((ht (make-hash-table)))
+    (do ((i 0 (+ i 1))) ((= i (vector-length uchars)) ht)
+      (hash-table-set! ht (vector-ref uchars i) i))))
+
+(define BOS (vector-length uchars))
+(define vocab-size (+ (vector-length uchars) 1))
+(display "vocab size: ") (display vocab-size) (newline)
