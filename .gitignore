@@ -7,3 +7,5 @@
 .#*.scm
 *.py
 *.txt
+PLAN.md
+microgpt
