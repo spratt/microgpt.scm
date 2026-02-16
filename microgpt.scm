@@ -4,7 +4,44 @@
         (scheme write)
         (scheme char)
         (srfi 1)
-
         (srfi 27)
         (srfi 69)
         (srfi 132))
+
+;;; --- Section 2: PRNG helpers ---
+
+;; Box-Muller transform: generate Gaussian random numbers from uniform samples
+(define (gauss mean std)
+  (let ((u1 (random-real))
+        (u2 (random-real)))
+    (+ mean (* std (sqrt (* -2 (log u1))) (cos (* 2 (acos -1) u2))))))
+
+;; Fisher-Yates shuffle: in-place shuffle of a vector
+(define (vector-shuffle! vec)
+  (let ((n (vector-length vec)))
+    (do ((i (- n 1) (- i 1)))
+        ((<= i 0) vec)
+      (let* ((j (random-integer (+ i 1)))
+             (tmp (vector-ref vec i)))
+        (vector-set! vec i (vector-ref vec j))
+        (vector-set! vec j tmp)))))
+
+;; Shuffle a list by converting to vector, shuffling, and converting back
+(define (shuffle lst)
+  (let ((vec (list->vector lst)))
+    (vector-shuffle! vec)
+    (vector->list vec)))
+
+;; Weighted random choice: pick an index from a list of weights
+;; Walks the weights accumulating a running sum, returns the index
+;; where the cumulative sum exceeds a uniform random threshold.
+(define (weighted-choice weights)
+  (let ((total (fold + 0 weights))
+        (threshold (* (random-real) (fold + 0 weights))))
+    (let loop ((ws weights) (acc 0) (i 0))
+      (if (null? (cdr ws))
+          i
+          (let ((acc (+ acc (car ws))))
+            (if (>= acc threshold)
+                i
+                (loop (cdr ws) acc (+ i 1))))))))
