@@ -210,3 +210,84 @@
     (hash-table-keys state-dict)))
 
 (display "num params: ") (display (length params)) (newline)
+
+;;; --- Section 7: Model architecture ---
+
+;; Linear layer: matrix-vector multiply (each row dot x)
+(define (linear x w)
+  (map (lambda (wo) (vsum (map v* wo x))) (vector->list w)))
+
+;; Softmax: subtract max for numerical stability, exp, normalize
+(define (softmax logits)
+  (let* ((max-val (fold max -inf.0 (map value-data logits)))
+         (exps (map (lambda (v) (vexp (v+ v (- max-val)))) logits))
+         (total (vsum exps)))
+    (map (lambda (e) (v/ e total)) exps)))
+
+;; RMSNorm: root mean square normalization
+(define (rmsnorm x)
+  (let* ((ms (v/ (vsum (map (lambda (xi) (v* xi xi)) x)) (length x)))
+         (scale (v** (v+ ms 1e-5) -0.5)))
+    (map (lambda (xi) (v* xi scale)) x)))
+
+;; Slice a list: return elements from index start to start+len
+(define (list-slice lst start len)
+  (take (list-tail lst start) len))
+
+;; GPT forward pass: token + position embedding, attention, MLP, output logits
+(define (gpt token-id pos-id keys vals)
+  (let* ((tok-emb (vector-ref (hash-table-ref state-dict "wte") token-id))
+         (pos-emb (vector-ref (hash-table-ref state-dict "wpe") pos-id))
+         (x (map v+ tok-emb pos-emb))
+         (x (rmsnorm x)))
+    ;; Layer loop (named let threads x through iterations)
+    (let layer-loop ((li 0) (x x))
+      (if (= li n-layer)
+          ;; After all layers, compute output logits
+          (linear x (hash-table-ref state-dict "lm_head"))
+          (let* ((prefix (string-append "layer" (number->string li) "."))
+                 ;; 1) Multi-head Attention block
+                 (x-residual x)
+                 (x (rmsnorm x))
+                 (q (linear x (hash-table-ref state-dict (string-append prefix "attn_wq"))))
+                 (k (linear x (hash-table-ref state-dict (string-append prefix "attn_wk"))))
+                 (v (linear x (hash-table-ref state-dict (string-append prefix "attn_wv")))))
+            ;; Append k and v to cache
+            (vector-set! keys li (append (vector-ref keys li) (list k)))
+            (vector-set! vals li (append (vector-ref vals li) (list v)))
+            (let* ((cached-keys (vector-ref keys li))
+                   (cached-vals (vector-ref vals li))
+                   ;; Multi-head attention: concatenate head outputs
+                   (x-attn
+                     (let head-loop ((h 0) (acc '()))
+                       (if (= h n-head)
+                           acc
+                           (let* ((hs (* h head-dim))
+                                  (q-h (list-slice q hs head-dim))
+                                  (k-h (map (lambda (ki) (list-slice ki hs head-dim)) cached-keys))
+                                  (v-h (map (lambda (vi) (list-slice vi hs head-dim)) cached-vals))
+                                  ;; Attention logits: dot(q_h, k_t) / sqrt(head_dim)
+                                  (scale (/ 1.0 (sqrt head-dim)))
+                                  (attn-logits
+                                    (map (lambda (k-t)
+                                           (v* (vsum (map v* q-h k-t)) scale))
+                                         k-h))
+                                  (attn-weights (softmax attn-logits))
+                                  ;; Weighted sum of value vectors (iterate by position, not dimension)
+                                  (head-out
+                                    (fold (lambda (wt vt acc)
+                                            (map (lambda (vi ai) (v+ (v* wt vi) ai)) vt acc))
+                                          (make-list head-dim (val 0))
+                                          attn-weights v-h)))
+                             (head-loop (+ h 1) (append acc head-out))))))
+                   ;; Project attention output
+                   (x (linear x-attn (hash-table-ref state-dict (string-append prefix "attn_wo"))))
+                   (x (map v+ x x-residual))
+                   ;; 2) MLP block
+                   (x-residual x)
+                   (x (rmsnorm x))
+                   (x (linear x (hash-table-ref state-dict (string-append prefix "mlp_fc1"))))
+                   (x (map vrelu x))
+                   (x (linear x (hash-table-ref state-dict (string-append prefix "mlp_fc2"))))
+                   (x (map v+ x x-residual)))
+              (layer-loop (+ li 1) x)))))))

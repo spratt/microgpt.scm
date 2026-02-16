@@ -1,21 +1,19 @@
-# Known optimization opportunities
+# Optimization tracking
 
-Tracked non-performant implementation details that are acceptable in phase 1 but should be addressed for phase 2.
+## Implemented
 
-## `weighted-choice`: two passes instead of one (SECTION2)
+### `weighted-choice`: single pass (SECTION2)
 
-`weighted-choice` computes `(fold + 0 weights)` twice — once for `total` (which is then unused) and once inside the `threshold` calculation. In phase 2 with 600+ tokens, this doubles the work unnecessarily.
+`weighted-choice` previously computed `(fold + 0 weights)` twice — once for `total` and once inline in `threshold`. Fixed to compute `total` once via `let*` and reuse it.
 
-Fix: compute `total` once and reuse it.
+### `docs`: vector instead of list (SECTION3)
 
-```scheme
-(let* ((total (fold + 0 weights))
-       (threshold (* (random-real) total)))
-  ...)
-```
+`docs` was a list, accessed during training with `list-ref` by `step % len(docs)` — O(n) where n is up to 32K. Fixed to `(define docs (list->vector (shuffle (read-lines "input.txt"))))` with `vector-ref` / `vector-length` for O(1) access.
 
-## `docs`: list instead of vector (SECTION3)
+### Attention head output: O(positions * head_dim^2) → O(positions * head_dim) (SECTION7)
 
-`docs` is a list, accessed during training with `list-ref` by `step % len(docs)`. This is O(n) where n is up to 32K documents. Python lists are array-backed (O(1)), so this is a regression.
+The head output computation originally iterated by dimension `j`, indexing into each value vector with `list-ref vt j` — O(j) per access, O(head_dim^2) total per position. Fixed to iterate by position instead, scaling each value vector by its attention weight and summing element-wise via `fold`. Only sequential list traversal, no `list-ref`. Critical for phase 2 where head_dim will be ~64.
 
-Fix: `(define docs (list->vector (shuffle (read-lines "input.txt"))))` and use `vector-ref` / `vector-length` in the training loop.
+## Not yet implemented
+
+(none)
